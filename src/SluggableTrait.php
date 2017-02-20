@@ -182,6 +182,16 @@ trait SluggableTrait
         ) {
             return $slug;
         }
+        
+        if (array_key_exists($this->getKey(), $list)) {
+            $currentSlug = $list[$this->getKey()];
+            if (
+                $currentSlug === $slug ||
+                strpos($currentSlug, $slug) === 0
+            ) {
+                return $currentSlug;
+            }
+        }
 
         $suffix = $this->generateSuffix($slug, $list);
 
