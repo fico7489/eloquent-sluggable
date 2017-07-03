@@ -230,113 +230,50 @@ class SlugService
      */
     protected function makeSlugUnique($slug, array $config, $attribute)
     {
+        //if we don't need unique slug return AS IS
         if (!$config['unique']) {
             return $slug;
         }
 
         $separator = $config['separator'];
 
-        // find all models where the slug is like the current one
-        $list = $this->getExistingSlugs($slug, $attribute, $config);
+        $result = $this->model->newQuery()
+            ->where('slug', '=', $slug)
+            ->first();
 
-        // if ...
-        // 	a) the list is empty, or
-        // 	b) our slug isn't in the list
-        // ... we are okay
-        if (
-            $list->count() === 0 ||
-            $list->contains($slug) === false
-        ) {
+        if( ! $result){
+            //slug does not exists
             return $slug;
         }
 
-        // if our slug is in the list, but
-        // 	a) it's for our model, or
-        //  b) it looks like a suffixed version of our slug
-        // ... we are also okay (use the current slug)
-        if ($list->has($this->model->getKey())) {
-            $currentSlug = $list->get($this->model->getKey());
+        if($result->id === $this->model->id){
+            //current model for updating
+            return $slug;
+        }
 
-            if (
-                $currentSlug === $slug ||
-                strpos($currentSlug, $slug) === 0
-            ) {
-                return $currentSlug;
+        $results = $this->model->newQuery()
+            ->where('slug', 'like', $slug . $separator . '%')
+            ->where('id', '<>', $this->model->id)
+            ->get()
+            ->pluck('slug', 'id')
+            ->toArray();
+
+        $takenNumners = [];
+        foreach($results as $idTmp => $slugTmp){
+            $number = str_replace($slug . $separator, '', $slugTmp);
+            if(is_numeric($number)){
+                $takenNumners[] = $number;
             }
         }
 
-        $method = $config['uniqueSuffix'];
-        if ($method === null) {
-            $suffix = $this->generateSuffix($slug, $separator, $list);
-        } elseif (is_callable($method)) {
-            $suffix = call_user_func($method, $slug, $separator, $list);
-        } else {
-            throw new \UnexpectedValueException('Sluggable "reserved" for ' . get_class($this->model) . ':' . $attribute . ' is not null, an array, or a closure that returns null/array.');
+        for($i = 1; $i < 10000; $i++){
+            if( ! in_array($i, $takenNumners, true)){
+                $suffix = $i;
+                break;
+            }
         }
 
         return $slug . $separator . $suffix;
-    }
-
-    /**
-     * Generate a unique suffix for the given slug (and list of existing, "similar" slugs.
-     *
-     * @param string $slug
-     * @param string $separator
-     * @param \Illuminate\Support\Collection $list
-     * @return string
-     */
-    protected function generateSuffix($slug, $separator, Collection $list)
-    {
-        $len = strlen($slug . $separator);
-
-        // If the slug already exists, but belongs to
-        // our model, return the current suffix.
-        if ($list->search($slug) === $this->model->getKey()) {
-            $suffix = explode($separator, $slug);
-
-            return end($suffix);
-        }
-
-        $list->transform(function ($value, $key) use ($len) {
-            return intval(substr($value, $len));
-        });
-
-        // find the highest value and return one greater.
-        return $list->max() + 1;
-    }
-
-    /**
-     * Get all existing slugs that are similar to the given slug.
-     *
-     * @param string $slug
-     * @param string $attribute
-     * @param array $config
-     * @return \Illuminate\Support\Collection
-     */
-    protected function getExistingSlugs($slug, $attribute, array $config)
-    {
-        $includeTrashed = $config['includeTrashed'];
-
-        $query = $this->model->newQuery()
-            ->findSimilarSlugs($this->model, $attribute, $config, $slug);
-
-        // use the model scope to find similar slugs
-        if (method_exists($this->model, 'scopeWithUniqueSlugConstraints')) {
-            $query->withUniqueSlugConstraints($this->model, $attribute, $config, $slug);
-        }
-
-        // include trashed models if required
-        if ($includeTrashed && $this->usesSoftDeleting()) {
-            $query->withTrashed();
-        }
-
-        // get the list of all matching slugs
-        $results = $query->select([$attribute, $this->model->getTable() . '.' . $this->model->getKeyName()])
-            ->get()
-            ->toBase();
-
-        // key the results and return
-        return $results->pluck($attribute, $this->model->getKeyName());
     }
 
     /**
