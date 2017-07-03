@@ -238,17 +238,20 @@ class SlugService
         $separator = $config['separator'];
 
         $result = $this->model->newQuery()
+            ->where('id',   '<>', $this->model->id)
             ->where('slug', '=', $slug)
             ->first();
 
         if( ! $result){
-            //slug does not exists
-            return $slug;
-        }
-
-        if($result->id === $this->model->id){
-            //current model for updating
-            return $slug;
+            //slug does not exists in current table
+            if (method_exists($this->model, 'slugExistsInHistory')){
+                //check in history table if function implemented
+                if( ! $this->model->slugExistsInHistory($slug)){
+                    return $slug;
+                }
+            }else{
+                return $slug;
+            }
         }
 
         $results = $this->model->newQuery()
@@ -258,21 +261,25 @@ class SlugService
             ->pluck('slug', 'id')
             ->toArray();
 
-        $takenNumners = [];
+        $takenNumbers = [];
+        if (method_exists($this->model, 'takenNumbersInHistory')){
+            $takenNumbers = $this->model->takenNumbersInHistory($slug, $separator, $takenNumbers);
+        }
+
+
         foreach($results as $idTmp => $slugTmp){
             $number = str_replace($slug . $separator, '', $slugTmp);
             if(is_numeric($number)){
-                $takenNumners[] = $number;
+                $takenNumbers[] = $number;
             }
         }
 
         for($i = 1; $i < 10000; $i++){
-            if( ! in_array($i, $takenNumners, true)){
+            if( ! in_array($i, $takenNumbers)){
                 $suffix = $i;
                 break;
             }
         }
-
         return $slug . $separator . $suffix;
     }
 
