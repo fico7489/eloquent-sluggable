@@ -2,7 +2,7 @@
 
 use Cocur\Slugify\Slugify;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * Class SlugService
@@ -237,12 +237,15 @@ class SlugService
 
         $separator = $config['separator'];
 
-        $result = $this->model->newQuery()
-            ->where('id',   '<>', $this->model->id)
+        $useSoftDeletes = in_array(SoftDeletes::class, class_uses($this->model));
+
+        $results = $this->model->newQuery();
+        $results = $useSoftDeletes ? $results->withTrashed() : $results;
+        $results = $results->where('id',   '<>', $this->model->id)
             ->where('slug', '=', $slug)
             ->first();
 
-        if( ! $result){
+        if( ! $results){
             //slug does not exists in current table
             if (method_exists($this->model, 'slugExistsInHistory')){
                 //check in history table if function implemented
@@ -254,8 +257,9 @@ class SlugService
             }
         }
 
-        $results = $this->model->newQuery()
-            ->where('slug', 'like', $slug . $separator . '%')
+        $results = $this->model->newQuery();
+        $results = $useSoftDeletes ? $results->withTrashed() : $results;
+        $results  = $results->where('slug', 'like', $slug . $separator . '%')
             ->where('id', '<>', $this->model->id)
             ->get()
             ->pluck('slug', 'id')
